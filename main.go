@@ -2,8 +2,10 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -21,22 +23,49 @@ func main() {
 	db, err := sql.Open("cr-sqlite", "./todos.db")
 	mustNot(err)
 	defer func(db *sql.DB) {
-		db.Exec(`select crsql_finalize();`) // clean up after cr-sqlite
+		db.Exec(`select crsql_finalize();`) // Clean up after cr-sqlite
 		db.Close()
 	}(db)
 
-	_, err = db.Exec(`CREATE TABLE todos (id PRIMARY KEY NOT NULL, description, completed);`) // make our todos table
-	mustNot(err)
-	_, err = db.Exec(`select crsql_as_crr('todos');`) //make it CRDT
+	_, err = db.Exec("CREATE TABLE IF NOT EXISTS todos (id PRIMARY KEY NOT NULL, description, completed);")
 	mustNot(err)
 
-	// Lets make some toast!
-	_, err = db.Exec(`INSERT INTO todos (id, description, completed) VALUES (?, ?, ?);`, 1, "Get Toast", true)
+	items := []item{}
+
+	rows, err := db.Query("select id, description, completed from todos;")
 	mustNot(err)
-	_, err = db.Exec(`INSERT INTO todos (id, description, completed) VALUES (?, ?, ?);`, 2, "Get Butter", false)
-	mustNot(err)
-	_, err = db.Exec(`INSERT INTO todos (id, description, completed) VALUES (?, ?, ?);`, 3, "Get Nutella", false)
-	mustNot(err)
-	_, err = db.Exec(`INSERT INTO todos (id, description, completed) VALUES (?, ?, ?);`, 4, "Make a slice of Nutella toast", false)
-	mustNot(err)
+	for rows.Next() {
+		var id int
+		var description string
+		var completed bool
+		err = rows.Scan(&id, &description, &completed)
+		mustNot(err)
+		items = append(items, item{
+			ID:          id,
+			Description: description,
+			Done:        completed,
+		})
+	}
+
+	m := NewModel(items)
+
+	m.OnNew = func(i item) {
+		_, err := db.Exec("INSERT INTO todos (id, description, completed) VALUES (?, ?, ?)", i.ID, i.Description, i.Done)
+		mustNot(err)
+	}
+	m.OnUpdate = func(i item) {
+		_, err := db.Exec("UPDATE todos SET description = ?, completed = ? WHERE id = ?", i.Description, i.Done, i.ID)
+		mustNot(err)
+	}
+	m.OnDelete = func(i item) {
+		_, err := db.Exec("DELETE FROM todos WHERE id = ?", i.ID)
+		mustNot(err)
+	}
+
+	if _, err := tea.NewProgram(m).Run(); err != nil {
+		fmt.Println("Error running program:", err)
+		return
+	}
+
+	return
 }
