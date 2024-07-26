@@ -66,8 +66,10 @@ type model struct {
 	OnNew      func(item)
 	OnUpdate   func(item)
 	OnDelete   func(item)
-	Refresh    func([]item)
+	Refresh    func() []item
 }
+
+type refreshMsg struct{}
 
 func (m model) Init() tea.Cmd {
 	return nil
@@ -77,6 +79,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
+	case refreshMsg:
+		items := m.Refresh()
+
+		listItems := []list.Item{}
+		for _, item := range items {
+			listItems = append(listItems, item)
+		}
+		cmd = m.list.SetItems(listItems)
+		cmds = append(cmds, cmd)
 	case tea.WindowSizeMsg:
 		m.list.SetWidth(msg.Width)
 		return m, nil

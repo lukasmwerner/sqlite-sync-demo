@@ -10,6 +10,7 @@ import (
 	"path"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/fsnotify/fsnotify"
 	"github.com/mattn/go-sqlite3"
 )
 
@@ -39,7 +40,6 @@ func main() {
 	mustNot(err)
 
 	// setup changes storage
-	const PAGE_SIZE = 4 * 1024 // 4 kB
 	cwd, err := os.Getwd()
 	mustNot(err)
 	changesPath := path.Join(cwd, "todo-changes")
@@ -47,25 +47,17 @@ func main() {
 		os.Mkdir(changesPath, 0775)
 	}
 
+	watcher, err := fsnotify.NewWatcher()
+	mustNot(err)
+	mustNot(watcher.Add(changesPath))
+
 	hostname, err := os.Hostname()
 	mustNot(err)
 	hostChangesPath := path.Join(changesPath, hostname)
 	err = syncronizeLocalChangesToDisk(db, hostChangesPath)
 	mustNot(err)
 
-	// Synchronize any new changes
-	hosts, err := os.ReadDir(changesPath)
-	mustNot(err)
-	for _, host := range hosts {
-		if host.Name() == hostname {
-			continue
-		}
-		if host.IsDir() {
-			continue
-		}
-		err := syncronizeFromDiskToDB(db, path.Join(changesPath, host.Name()))
-		mustNot(err)
-	}
+	syncronizeFromHostsToDB(db, hostname, changesPath)
 
 	// pre-populate data from database
 	items := []item{}
@@ -90,23 +82,83 @@ func main() {
 	m.OnNew = func(i item) {
 		_, err := db.Exec("INSERT INTO todos (id, description, completed) VALUES (?, ?, ?)", i.ID, i.Description, i.Done)
 		mustNot(err)
+
+		err = syncronizeLocalChangesToDisk(db, hostChangesPath)
+		mustNot(err)
 	}
 	m.OnUpdate = func(i item) {
 		_, err := db.Exec("UPDATE todos SET description = ?, completed = ? WHERE id = ?", i.Description, i.Done, i.ID)
+		mustNot(err)
+
+		err = syncronizeLocalChangesToDisk(db, hostChangesPath)
 		mustNot(err)
 	}
 	m.OnDelete = func(i item) {
 		_, err := db.Exec("DELETE FROM todos WHERE id = ?", i.ID)
 		mustNot(err)
+
+		err = syncronizeLocalChangesToDisk(db, hostChangesPath)
+		mustNot(err)
+	}
+	m.Refresh = func() []item {
+		syncronizeFromHostsToDB(db, hostname, changesPath)
+		items := []item{}
+		rows, err := db.Query("SELECT id, description, completed FROM todos;")
+		mustNot(err)
+		for rows.Next() {
+			var id int
+			var description string
+			var completed bool
+			err = rows.Scan(&id, &description, &completed)
+			mustNot(err)
+			items = append(items, item{
+				ID:          id,
+				Description: description,
+				Done:        completed,
+			})
+		}
+		return items
 	}
 
-	if _, err := tea.NewProgram(m).Run(); err != nil {
+	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	go func() {
+		for {
+			select {
+			case err := <-watcher.Errors:
+				fmt.Println("had error watching", err.Error())
+			case event := <-watcher.Events:
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Rename) {
+					p.Send(refreshMsg{})
+				}
+			}
+		}
+	}()
+
+	if _, err := p.Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		return
 	}
 
 	err = syncronizeLocalChangesToDisk(db, hostChangesPath)
 	mustNot(err)
+}
+
+func syncronizeFromHostsToDB(db *sql.DB, hostname, changesPath string) {
+
+	// Synchronize any new changes
+	hosts, err := os.ReadDir(changesPath)
+	mustNot(err)
+	for _, host := range hosts {
+		if host.Name() == hostname {
+			continue
+		}
+		if host.IsDir() {
+			continue
+		}
+		err := syncronizeFromDiskToDB(db, path.Join(changesPath, host.Name()))
+		mustNot(err)
+	}
 }
 
 type crsql_changes struct {
