@@ -151,7 +151,7 @@ func syncronizeFromHostsToDB(db *sql.DB, hostname, changesPath string) {
 	hosts, err := os.ReadDir(changesPath)
 	mustNot(err)
 	for _, host := range hosts {
-		if host.Name() == hostname || host.Name() == ".DS_Store" {
+		if host.Name() == hostname || path.Ext(host.Name()) != ".changes" {
 			continue
 		}
 		if host.IsDir() {
@@ -245,7 +245,7 @@ func syncronizeLocalChangesToDisk(db *sql.DB, hostFile string) error {
 			Seq:         seq,
 		})
 	}
-	f, err := os.Create(hostFile)
+	f, err := os.Create(hostFile+".changes")
 	if err != nil {
 		return err
 	}
