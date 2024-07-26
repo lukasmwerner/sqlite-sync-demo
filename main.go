@@ -35,6 +35,9 @@ func main() {
 	_, err = db.Exec("CREATE TABLE IF NOT EXISTS todos (id PRIMARY KEY NOT NULL, description, completed);")
 	mustNot(err)
 
+	_, err = db.Exec("select crsql_as_crr('todos');")
+	mustNot(err)
+
 	// setup changes storage
 	const PAGE_SIZE = 4 * 1024 // 4 kB
 	cwd, err := os.Getwd()
@@ -57,7 +60,9 @@ func main() {
 		if host.Name() == hostname {
 			continue
 		}
-		log.Println("syncronizing from:", host.Name())
+		if host.IsDir() {
+			continue
+		}
 		err := syncronizeFromDiskToDB(db, path.Join(changesPath, host.Name()))
 		mustNot(err)
 	}
@@ -100,7 +105,8 @@ func main() {
 		return
 	}
 
-	return
+	err = syncronizeLocalChangesToDisk(db, hostChangesPath)
+	mustNot(err)
 }
 
 type crsql_changes struct {
@@ -134,7 +140,7 @@ func syncronizeFromDiskToDB(db *sql.DB, hostFile string) error {
 		return err
 	}
 	for _, change := range changes {
-		_, err := db.Exec("INSERT INTO crsql_changes (table, pk, cid, value, col_version, db_version, site_id, cl, seq) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		_, err := db.Exec("INSERT INTO crsql_changes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			change.Table,
 			change.Pk,
 			change.Cid,
@@ -186,7 +192,7 @@ func syncronizeLocalChangesToDisk(db *sql.DB, hostFile string) error {
 			Seq:         seq,
 		})
 	}
-	f, err := os.OpenFile(hostFile, os.O_RDWR|os.O_CREATE, 0644)
+	f, err := os.Create(hostFile)
 	if err != nil {
 		return err
 	}
