@@ -8,15 +8,16 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/fsnotify/fsnotify"
 	"github.com/mattn/go-sqlite3"
 )
 
-func mustNot(err error) {
+func mustNot(err error, tags ...string) {
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln(strings.Join(tags, " "), err)
 	}
 }
 
@@ -55,7 +56,7 @@ func main() {
 	mustNot(err)
 	hostChangesPath := path.Join(changesPath, hostname)
 	err = syncronizeLocalChangesToDisk(db, hostChangesPath)
-	mustNot(err)
+	mustNot(err, "sync changes DB -> disk")
 
 	syncronizeFromHostsToDB(db, hostname, changesPath)
 
@@ -150,14 +151,14 @@ func syncronizeFromHostsToDB(db *sql.DB, hostname, changesPath string) {
 	hosts, err := os.ReadDir(changesPath)
 	mustNot(err)
 	for _, host := range hosts {
-		if host.Name() == hostname {
+		if host.Name() == hostname || host.Name() == ".DS_Store" {
 			continue
 		}
 		if host.IsDir() {
 			continue
 		}
 		err := syncronizeFromDiskToDB(db, path.Join(changesPath, host.Name()))
-		mustNot(err)
+		mustNot(err, "sync Disk -> DB", host.Name())
 	}
 }
 
