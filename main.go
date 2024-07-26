@@ -77,7 +77,7 @@ func main() {
 		})
 	}
 
-	m := NewModel(items)
+	m := NewModel(hostname, items)
 
 	// handle database interactions
 	m.OnNew = func(i item) {

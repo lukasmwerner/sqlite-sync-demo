@@ -150,7 +150,7 @@ func (m model) View() string {
 	return list
 }
 
-func NewModel(items []item) model {
+func NewModel(hostname string, items []item) model {
 
 	listItems := []list.Item{}
 	for _, item := range items {
@@ -158,7 +158,7 @@ func NewModel(items []item) model {
 	}
 
 	l := list.New(listItems, itemDelegate{}, 20, 12)
-	l.Title = "Todos"
+	l.Title = "Todos @"+hostname
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new")),
