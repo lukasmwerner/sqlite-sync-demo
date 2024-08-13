@@ -1,6 +1,6 @@
 # sqlite-sync-demo
 
-This is the source code for the accompanying article.
+This is the source code for the [accompanying article](https://lukaswerner.com/post/2024-08-13@Sqlite-Local-First).
 
 ## Installation
 
